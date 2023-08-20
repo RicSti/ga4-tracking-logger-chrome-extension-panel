@@ -6,7 +6,7 @@ The GA4 Tracking Logger Chrome Extension Panel is a tool designed to assist deve
 
 ## Installation
 
-1. Download the extension files or clone the repository from [GitHub Repository](https://github.com/your-repo-url).
+1. Download the extension files or clone the repository from [GitHub Repository](https://github.com/RicSti/ga4-tracking-logger-chrome-extension-panel).
 2. Open the Chrome browser.
 3. Navigate to `chrome://extensions/`.
 4. Enable "Developer mode" by toggling the switch in the upper-right corner.
