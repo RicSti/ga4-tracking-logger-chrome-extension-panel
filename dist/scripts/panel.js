@@ -9,8 +9,7 @@ chrome.storage.session.get(['batchedUrls'], function (result) {
     let urlsString = "";
     // update textarea with batched urls
     for (let i = 0; i < urls.length; i++) {
-      if (urls[i].length > 2)
-        urlsString += urls[i] + "\n";
+      urlsString += urls[i] + "\n";
     }
     document.getElementById('urlBatch').value = urlsString;
     // select actual url from array and store remaining urls in session storage
@@ -102,7 +101,7 @@ function batchUrls() {
     'console.log(unescape("URL(s) laden..."));'
   );
   const divElement = document.getElementById('urls');
-  const divContent = divElement.value
+  const divContent = divElement.value.trim();
   const parsedData = divContent.split("\n");
   // remove empty lines from array and store urls in session storage
   if (parsedData.length > 0 && parsedData[0].length > 0) {

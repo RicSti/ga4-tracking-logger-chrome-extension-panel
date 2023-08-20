@@ -21,10 +21,16 @@ The GA4 Tracking Logger Chrome Extension Panel is a tool designed to assist deve
 
 ## Features
 
-### Start and Stop Tracking
+### Start and Stop Capturing
 
 - Click the "Start" button to begin capturing GA4 tracking calls on the current page.
 - Click the "Stop" button to stop capturing and log the captured tracking requests.
+
+### Capturing and Logging
+
+- The extension captures GA4 tracking calls that contain "analytics" and "collect?" in the URL.
+- Tracked events are logged along with the date and time they were captured.
+- The number of captured tracking events is displayed in the "Tracking calls recorded on this page" section.
 
 ### Batch URL Processing
 
@@ -36,9 +42,3 @@ The GA4 Tracking Logger Chrome Extension Panel is a tool designed to assist deve
 
 - After tracking is stopped, the "Download" button will appear if tracked events were logged.
 - Click the "Download" button to export the captured tracking events as a CSV file.
-
-### Capturing and Logging
-
-- The extension captures GA4 tracking calls that contain "analytics" and "collect?" in the URL.
-- Tracked events are logged along with the date and time they were captured.
-- The number of captured tracking events is displayed in the "Tracking calls recorded on this page" section.
