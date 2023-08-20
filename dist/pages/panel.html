@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf8" />
+  <link rel="stylesheet" href="../styles/panel.css" />
+</head>
+
+<body>
+  <div id="header">
+    <h1>GA4 Tracking Logger</h1>
+    <span id="subheading">Just another simple webtool from...</span>
+  </div>
+  <div id="controls">
+    <span class="sphere red"></span>
+    <button id="startButton">Start</button>
+    <button id="stopButton">Stop</button>
+    <button id="reloadButton">Reset</button>
+    <button id="downloadButton" class="hidden">Download</button>
+  </div>
+  <div id="urlInput">
+    <span><strong>Batch processing</strong> (one URL per line)</span>
+    <textarea id="urls"></textarea>
+    <button id="loadButton">Start batch processing</button>
+  </div>
+  <div id="batch" class="hidden">
+    <span>URLs still to be processed in the batch:</span>
+    <textarea id="urlBatch"></textarea>
+  </div>
+  <div id="requestsOutput" class="hidden">
+    <span>Tracking calls recorded on this page:</span>
+    <span id="requestsCount">0</span>
+    <textarea id="requests"></textarea>
+  </div>
+  <div id="footer">
+    <hr>
+    <span id="copyright">&copy; <span id="year">2023</span> by <a href="https://www.adtraffic.de/"
+        target="_blank">adtraffic GmbH</a> · Kirchdorfer Str. 14a ·
+      D-83052 Bruckmühl</span>
+  </div>
+  <script src="../scripts/panel.js"></script>
+</body>
+
+</html>

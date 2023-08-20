@@ -1,0 +1,21 @@
+  {
+    "manifest_version": 3,
+    "name": "GA4 Tracking Logger",
+    "version": "1.0",
+    "description": "With the GA4 Tracking Logger Chrome Extension Panel, you have a powerful tool at your fingertips to simplify the capturing and logging of Google Analytics tracking calls. This extension streamlines the process and provides you with valuable insights into user behavior and engagement. Whether you're a developer, marketer, or analyst, this tool can enhance your workflow and help you make informed decisions based on accurate tracking data. Download and start using the extension now to take your GA4 tracking to the next level.",
+    "icons": {
+      "16": "./images/icon16.png",
+      "32": "./images/icon32.png",
+      "48": "./images/icon48.png",
+      "64": "./images/icon64.png",
+      "128": "./images/icon128.png",
+      "256": "./images/icon256.png",
+      "512": "./images/icon512.png"
+    },
+    "author": "rs@adtraffic.de",
+    "devtools_page": "./pages/devtools.html",
+    "permissions": [
+      "storage",
+      "tabs"
+    ]
+  }
