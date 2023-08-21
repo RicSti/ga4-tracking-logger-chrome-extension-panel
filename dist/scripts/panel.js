@@ -167,8 +167,23 @@ function normalizeUrl(urlString) {
   const propertiesArray = [];
   // iterate over all parameters and split values if necessary
   searchParams.forEach((value, key) => {
-    const valuesArray = value.split("~");
-    propertiesArray.push({ key, values: valuesArray });
+      if (!value.includes("~")) {
+          propertiesArray.push({ key, values: value });
+      } else {
+          if (value.match(/~$/)) {
+              value = value.slice(0, -1);
+              propertiesArray.push({ key, values: value });
+          } else {
+              let parentKey = key;
+              const valuesArray = value.split("~");
+              valuesArray.forEach((value) => {
+                  let valueSplitted = value.replace(/^(.{2})/g, "$1|");
+                  key = parentKey + valueSplitted.split("|")[0];
+                  value = valueSplitted.split("|")[1];
+                  propertiesArray.push({ key, values: value });
+              });
+          }
+      }
   });
   return (propertiesArray);
 }
@@ -194,8 +209,10 @@ function createCsv(allColumnNames, allEvents) {
     let row = [];
     for (j = 0; j < allColumnNames.length; j++) {
       let columnName = allColumnNames[j];
-      if (allEvents[i].filter((pair) => pair.key == columnName) && allEvents[i].filter((pair) => pair.key == columnName)[0] && allEvents[i].filter((pair) => pair.key == columnName)[0].values && allEvents[i].filter((pair) => pair.key == columnName)[0].values[0]) {
-        let value = allEvents[i].filter((pair) => pair.key == columnName)[0].values[0];
+      console.log(columnName);
+      if (allEvents[i].filter((pair) => pair.key == columnName) && allEvents[i].filter((pair) => pair.key == columnName)[0] && allEvents[i].filter((pair) => pair.key == columnName)[0].values) {
+        let value = allEvents[i].filter((pair) => pair.key == columnName)[0].values;
+        console.log(value);
         row.push(value);
       } else {
         row.push('""');
