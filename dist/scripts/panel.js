@@ -16,7 +16,7 @@ chrome.storage.session.get(['batchedUrls'], function (result) {
     let actualUrl = urls[0];
     urls.shift();
     chrome.storage.session.set({ batchedUrls: JSON.stringify(urls) });
-    // get active tab and open actual url
+    start();
     const tabId = getActiveTab();
     start();
     openUrl(tabId, actualUrl);
@@ -33,9 +33,17 @@ function openUrl(tabId, urlString) {
   });
 }
 
+// async function openUrl(urlString) {
+//   // open url in active tab and reload extension after 5 seconds
+//   let tab = await getActiveTab();
+//   chrome.tabs.update(tab.id, { url: urlString }, function () {
+//     setTimeout(reloadExtension, 5000);
+//   });
+// }
+
 this.listener = function (request) {
   // Function reference for event listener
-  if (request.request.url.includes("analytics") && request.request.url.includes("collect?")) {
+  if (request.request.url.includes("analytics") && request.request.url.includes("collect")) {
     // extract date/time and url from request and prepare for storage
     let requestString = '{"' + 'dateTime":"' + request.startedDateTime + '",' + '"url":"' + request.request.url + '"}';
     // show request in panel
@@ -71,6 +79,10 @@ function updateLoggedEvents(requestString) {
 // Functions for UI interaction
 
 function start() {
+  // activate dataLayer event listener on page
+  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    chrome.tabs.sendMessage(tabs[0].id, { type: "ACTIVATE_LISTENER" })
+  });
   // add event listener to network requests
   chrome.devtools.network.onRequestFinished.addListener(this.listener);
   // update UI
@@ -79,7 +91,7 @@ function start() {
   document.getElementById("requestsOutput").classList.remove("hidden");
 }
 
-function stop() {
+function stop(button) {
   // remove event listener from network requests
   chrome.devtools.network.onRequestFinished.removeListener(this.listener);
   // update UI
@@ -93,6 +105,12 @@ function stop() {
       document.getElementById("downloadButton").classList.remove("hidden");
     }
   });
+  if (button) {
+    // deactivate dataLayer event listener on page
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      chrome.tabs.sendMessage(tabs[0].id, { type: "DEACTIVATE_LISTENER" })
+    });
+  }
 }
 
 function batchUrls() {
@@ -122,28 +140,31 @@ function batchUrls() {
 }
 
 function exportLoggedEvents() {
-  // get logged events from session storage and process them 
   chrome.storage.session.get(['loggedEvents'], function (result) {
     if (result && result.loggedEvents && result.loggedEvents !== "[]") {
-      chrome.devtools.inspectedWindow.eval(
-        'console.log(unescape("CSV Daten werden exportiert..."));'
-      );
       const parsedData = JSON.parse(result.loggedEvents);
-      const allEvents = processEvents(parsedData);
-      const allColumnNames = extractKeys(allEvents);
-      const csvData = createCsv(allColumnNames, allEvents);
-      var blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-      // create download link and click it
-      var link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = 'GA4TrackingLog.csv';
-      link.click();
-      chrome.devtools.inspectedWindow.eval(
-        'console.log(unescape("CSV Daten wurden exportiert."));'
-      );
+      let allEvents = processEvents(parsedData);
+
+      chrome.storage.session.get(['loggedDataLayerEvents'], function (result) {
+        const parsedDataLayerEvents = JSON.parse(result.loggedDataLayerEvents);
+        allEvents = allEvents.concat(processDataLayerEvents(parsedDataLayerEvents));
+
+        const allColumnNames = extractKeys(allEvents);
+        const csvData = createCsv(allColumnNames, allEvents);
+
+        var blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'GA4TrackingLog.csv';
+        link.click();
+        chrome.devtools.inspectedWindow.eval(
+          'console.log(unescape("CSV Daten wurden exportiert."));'
+        );
+      });
     }
   });
 }
+
 
 // Functions for data processing
 
@@ -160,6 +181,37 @@ function processEvents(parsedData) {
   return events;
 }
 
+function processDataLayerEvents(parsedData) {
+  let dataLayerEvents = [];
+  for (let i = 0; i < parsedData.length; i++) {
+    let flattenedData = []
+    try {
+      flattenedData = flattenDataLayer(JSON.parse(parsedData[i]), prefix = '')
+    } catch (error) {
+      console.error('Invalid JSON:', parsedData[i]);
+    }
+    const renamedFlattenedData = renameKeys(flattenedData, keyMap);
+    let row = [];
+    let enCache = 0;
+    for (key in renamedFlattenedData) {
+      if (enCache === 1) {
+        row.push({ "key": "en", "values": [renamedFlattenedData[key]] });
+        enCache = 0;
+      } else if (/^(UA|G)-/.test(renamedFlattenedData[key])) {
+        row.push({ "key": "tid", "values": [renamedFlattenedData[key]] });
+      } else if (renamedFlattenedData[key] == "event") {
+        enCache = 1;
+      } else if (/^(timer)/.test(renamedFlattenedData[key])) {
+        row.push({ "key": "en", "values": [renamedFlattenedData[key]] });
+      } else if ((renamedFlattenedData[key])) {
+        row.push({ "key": key == 0 ? "en" : key, "values": [renamedFlattenedData[key]] });
+      }
+    }
+    dataLayerEvents.push(row);
+  }
+  return dataLayerEvents;
+}
+
 function normalizeUrl(urlString) {
   // normalize url and return array of parameters
   const url = new URL(urlString);
@@ -167,25 +219,71 @@ function normalizeUrl(urlString) {
   const propertiesArray = [];
   // iterate over all parameters and split values if necessary
   searchParams.forEach((value, key) => {
-      if (!value.includes("~")) {
-          propertiesArray.push({ key, values: value });
+    if (!value.includes("~")) {
+      propertiesArray.push({ key, values: value });
+    } else {
+      if (value.match(/~$/)) {
+        value = value.slice(0, -1);
+        propertiesArray.push({ key, values: value });
       } else {
-          if (value.match(/~$/)) {
-              value = value.slice(0, -1);
-              propertiesArray.push({ key, values: value });
-          } else {
-              let parentKey = key;
-              const valuesArray = value.split("~");
-              valuesArray.forEach((value) => {
-                  let valueSplitted = value.replace(/^(.{2})/g, "$1|");
-                  key = parentKey + valueSplitted.split("|")[0];
-                  value = valueSplitted.split("|")[1];
-                  propertiesArray.push({ key, values: value });
-              });
-          }
+        let parentKey = key;
+        const valuesArray = value.split("~");
+        valuesArray.forEach((value) => {
+          let valueSplitted = value.replace(/^(.{2})/g, "$1|");
+          key = parentKey + valueSplitted.split("|")[0];
+          value = valueSplitted.split("|")[1];
+          propertiesArray.push({ key, values: value });
+        });
       }
+    }
   });
   return (propertiesArray);
+}
+
+function flattenDataLayer(data, prefix = '') {
+  const flattenedData = {};
+
+  for (const key in data) {
+    if (typeof data[key] === 'object' && !Array.isArray(data[key])) {
+      // Recursive call for nested objects
+      const nestedData = flattenDataLayer(data[key], prefix + (key > 0 ? (key - 1) : key) + '_');
+      // const nestedData = flattenDataLayer(data[key], prefix + key + '_');
+      Object.assign(flattenedData, nestedData);
+    } else if (Array.isArray(data[key])) {
+      // Special handling for arrays
+      data[key].forEach((item, index) => {
+        const arrayPrefix = prefix + key + '_';
+        const arrayItemPrefix = arrayPrefix + (index + 1) + '_';
+        const flattenedItem = flattenDataLayer(item, arrayItemPrefix);
+        Object.assign(flattenedData, flattenedItem);
+      });
+    } else {
+      // Regular key-value pairs
+      flattenedData[prefix + key] = data[key];
+    }
+  }
+
+  return flattenedData;
+}
+
+function renameKeys(data, keyMap) {
+  const renamedData = {};
+
+  for (const key in data) {
+    let newKey = key;
+
+    for (const oldKey in keyMap) {
+      const regex = new RegExp(oldKey + '$');
+      if (key.match(regex)) {
+        newKey = key.replace(regex, keyMap[oldKey]);
+        break; // Stop searching after finding the first match
+      }
+    }
+
+    renamedData[newKey] = data[key];
+  }
+
+  return renamedData;
 }
 
 function extractKeys(array) {
@@ -209,10 +307,8 @@ function createCsv(allColumnNames, allEvents) {
     let row = [];
     for (j = 0; j < allColumnNames.length; j++) {
       let columnName = allColumnNames[j];
-      console.log(columnName);
       if (allEvents[i].filter((pair) => pair.key == columnName) && allEvents[i].filter((pair) => pair.key == columnName)[0] && allEvents[i].filter((pair) => pair.key == columnName)[0].values) {
         let value = allEvents[i].filter((pair) => pair.key == columnName)[0].values;
-        console.log(value);
         row.push(value);
       } else {
         row.push('""');
@@ -232,8 +328,17 @@ function getActiveTab() {
   });
 }
 
-function reloadExtension() {
+function reloadExtension(button) {
   // reload extension
+  if (button) {
+    chrome.storage.session.set({ batchedUrls: "[]" });
+    chrome.storage.session.set({ loggedEvents: "[]" });
+    chrome.storage.session.set({ loggedDataLayerEvents: "[]" });
+    console.clear();
+    chrome.devtools.inspectedWindow.eval(
+      'console.clear();'
+    );
+  }
   location.reload();
 }
 
@@ -248,12 +353,11 @@ loadButton.addEventListener('click', function () {
 });
 
 stopButton.addEventListener('click', function () {
-  stop();
+  stop("button");
 });
 
 reloadButton.addEventListener('click', function () {
-  chrome.storage.session.set({ loggedEvents: "[]" });
-  reloadExtension();
+  reloadExtension("button");
 });
 
 downloadButton.addEventListener('click', function () {
