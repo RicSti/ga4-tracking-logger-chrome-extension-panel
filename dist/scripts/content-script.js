@@ -12,6 +12,11 @@ function sendCmd(cmd) {
     window.dispatchEvent(cmdEvent);
 }
 
+function updateUrl(url) {
+    var cmdEvent = new CustomEvent('updateUrl', { detail: url });
+    window.dispatchEvent(cmdEvent);
+}
+
 // open a port for long-term communication with the event page
 var port = chrome.runtime.connect({ name: "content-script" });
 port.onMessage.addListener(function (message) {
@@ -29,6 +34,10 @@ chrome.runtime.onMessage.addListener(
             console.log(message.text);
             sendCmd("deactivateListener");
         }
+        if (message.type == "UPDATE_URL") {
+            console.log(message.text);
+            updateUrl(message.text);
+        }
     }
 )
 
@@ -37,8 +46,16 @@ function sendDataLayerEvent(event) {
     portTwo.postMessage({ text: event });
 }
 
+function sendGtagEvent(event) {
+    var portThree = chrome.runtime.connect({ name: "gtag-event" });
+    portThree.postMessage({ text: event });
+}
+
 // Add a post message listener to the page
 window.addEventListener("message", function (event) {
-    sendDataLayerEvent(event.data);
-    // We only accept messages from ourselves
+    if (JSON.parse(event.data).type == "gtag") {
+        sendGtagEvent(event.data);
+    } else if (JSON.parse(event.data).type == "dataLayer") {
+        sendDataLayerEvent(event.data);
+    }
 }, false);

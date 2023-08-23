@@ -17,29 +17,20 @@ chrome.storage.session.get(['batchedUrls'], function (result) {
     urls.shift();
     chrome.storage.session.set({ batchedUrls: JSON.stringify(urls) });
     start();
-    const tabId = getActiveTab();
     start();
-    openUrl(tabId, actualUrl);
+    openUrl(actualUrl);
   } else {
     // show url input again and hide batched urls
     stop();
   }
 });
 
-function openUrl(tabId, urlString) {
-  // open url in active tab and reload extension after 5 seconds
-  chrome.tabs.update(tabId, { url: urlString }, function () {
+function openUrl(urlString) {
+  chrome.tabs.query({ active: true, url: "https://*/*" }, function (tabs) {
+    chrome.tabs.sendMessage(tabs[0].id, { type: "UPDATE_URL", text: urlString })
     setTimeout(reloadExtension, 5000);
   });
 }
-
-// async function openUrl(urlString) {
-//   // open url in active tab and reload extension after 5 seconds
-//   let tab = await getActiveTab();
-//   chrome.tabs.update(tab.id, { url: urlString }, function () {
-//     setTimeout(reloadExtension, 5000);
-//   });
-// }
 
 this.listener = function (request) {
   // Function reference for event listener
@@ -80,7 +71,7 @@ function updateLoggedEvents(requestString) {
 
 function start() {
   // activate dataLayer event listener on page
-  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+  chrome.tabs.query({ active: true, url: "https://*/*" }, function (tabs) {
     chrome.tabs.sendMessage(tabs[0].id, { type: "ACTIVATE_LISTENER" })
   });
   // add event listener to network requests
@@ -107,7 +98,7 @@ function stop(button) {
   });
   if (button) {
     // deactivate dataLayer event listener on page
-    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    chrome.tabs.query({ active: true, url: "https://*/*" }, function (tabs) {
       chrome.tabs.sendMessage(tabs[0].id, { type: "DEACTIVATE_LISTENER" })
     });
   }
@@ -146,20 +137,48 @@ function exportLoggedEvents() {
       let allEvents = processEvents(parsedData);
 
       chrome.storage.session.get(['loggedDataLayerEvents'], function (result) {
-        const parsedDataLayerEvents = JSON.parse(result.loggedDataLayerEvents);
-        allEvents = allEvents.concat(processDataLayerEvents(parsedDataLayerEvents));
+        if (result.loggedDataLayerEvents) {
+          let parsedDataLayerEvents = [];
+          try {
+            parsedDataLayerEvents = JSON.parse(result.loggedDataLayerEvents);
+          } catch (error) {
+            console.error('Invalid JSON:', result.loggedDataLayerEvents);
+          }
+          allEvents = allEvents.concat(processDataLayerEvents(parsedDataLayerEvents));
+        } else {
+          console.log('No dataLayer events found.');
+        }
 
-        const allColumnNames = extractKeys(allEvents);
-        const csvData = createCsv(allColumnNames, allEvents);
+        chrome.storage.session.get(['loggedGtagEvents'], function (result) {
+          if (result.loggedGtagEvents) {
+            let parsedGtagEvents = [];
+            try {
+              parsedGtagEvents = JSON.parse(result.loggedGtagEvents);
+            } catch (error) {
+              console.error('Invalid JSON:', result.loggedGtagEvents);
+            }
+            allEvents = allEvents.concat(processGtagEvents(parsedGtagEvents));
+          } else {
+            console.log('No gtag events found.');
+          }
 
-        var blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-        var link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'GA4TrackingLog.csv';
-        link.click();
-        chrome.devtools.inspectedWindow.eval(
-          'console.log(unescape("CSV Daten wurden exportiert."));'
-        );
+          let allColumnNames = extractKeys(allEvents);
+          columnNamesBlacklist.forEach((blacklistedColumnName) => { allColumnNames.forEach((columnName) => { if (columnName === blacklistedColumnName) { allColumnNames.splice(allColumnNames.indexOf(blacklistedColumnName), 1); } }) });
+
+          const csvData = createCsv(allColumnNames, allEvents);
+
+          var blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+
+          const dateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+          var link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = 'GA4TrackingLog_'+dateSuffix+'.csv';
+          link.click();
+          chrome.devtools.inspectedWindow.eval(
+            'console.log(unescape("CSV Daten wurden exportiert."));'
+          );
+        });
       });
     }
   });
@@ -182,11 +201,69 @@ function processEvents(parsedData) {
 }
 
 function processDataLayerEvents(parsedData) {
-  let dataLayerEvents = [];
+  const dataLayerEvents = [];
+  for (let i = 0; i < parsedData.length; i++) {
+    let flattenedData = {};
+    try {
+      flattenedData = flattenDataLayer(JSON.parse(parsedData[i]), '');
+    } catch (error) {
+      console.error('Invalid JSON:', parsedData[i]);
+    }
+
+    const renamedFlattenedData = renameKeys(flattenedData);
+
+    let row = [];
+
+    enCache = 0;
+    for (key in renamedFlattenedData) {
+      if (enCache === 1) {
+        row.push({ "key": "en", "values": [renamedFlattenedData[key]] });
+        enCache = 0;
+      } else if (renamedFlattenedData[key] == "event") {
+        enCache = 1;
+      } else if (/^(UA|G)-/.test(renamedFlattenedData[key])) {
+        row.push({ "key": "tid", "values": [renamedFlattenedData[key]] });
+      } else if (/^(timer|scroll)/.test(renamedFlattenedData[key])) {
+        row.push({ "key": "en", "values": [renamedFlattenedData[key]] });
+      } else if ((renamedFlattenedData[key])) {
+        row.push({ "key": key == 0 ? "en" : key, "values": [renamedFlattenedData[key]] });
+      }
+    }
+    dataLayerEvents.push(row);
+  }
+
+  return dataLayerEvents;
+}
+
+function flattenDataLayer(data, prefix = '') {
+  const flattenedData = {};
+  for (const key in data) {
+    if (typeof data[key] === 'object') {
+      // Recursive call for nested objects
+      const nestedData = flattenDataLayer(data[key], prefix + (key > 0 ? (key - 1) : key) + '_');
+      Object.assign(flattenedData, nestedData);
+    } else if (Array.isArray(data[key])) {
+      // Special handling for arrays
+      data[key].forEach((item, index) => {
+        const arrayPrefix = prefix + key + '_';
+        const arrayItemPrefix = arrayPrefix + (index + 1) + '_';
+        const flattenedItem = flattenDataLayer(item, arrayItemPrefix);
+        Object.assign(flattenedData, flattenedItem);
+      });
+    } else {
+      // Regular key-value pairs
+      flattenedData[prefix + key] = data[key];
+    }
+  }
+  return flattenedData;
+}
+
+function processGtagEvents(parsedData) {
+  let gTagEvents = [];
   for (let i = 0; i < parsedData.length; i++) {
     let flattenedData = []
     try {
-      flattenedData = flattenDataLayer(JSON.parse(parsedData[i]), prefix = '')
+      flattenedData = flattenGtag(JSON.parse(parsedData[i]), prefix = '')
     } catch (error) {
       console.error('Invalid JSON:', parsedData[i]);
     }
@@ -207,9 +284,36 @@ function processDataLayerEvents(parsedData) {
         row.push({ "key": key == 0 ? "en" : key, "values": [renamedFlattenedData[key]] });
       }
     }
-    dataLayerEvents.push(row);
+    console.log(row);
+    gTagEvents.push(row);
   }
-  return dataLayerEvents;
+  return gTagEvents;
+}
+
+function flattenGtag(data, prefix = '') {
+  const flattenedData = {};
+
+  for (const key in data) {
+    if (typeof data[key] === 'object' && !Array.isArray(data[key])) {
+      // Recursive call for nested objects
+      const nestedData = flattenGtag(data[key], prefix + (key > 0 ? (key - 1) : key) + '_');
+      // const nestedData = flattenDataLayer(data[key], prefix + key + '_');
+      Object.assign(flattenedData, nestedData);
+    } else if (Array.isArray(data[key])) {
+      // Special handling for arrays
+      data[key].forEach((item, index) => {
+        const arrayPrefix = prefix + key + '_';
+        const arrayItemPrefix = arrayPrefix + (index + 1) + '_';
+        const flattenedItem = flattenGtag(item, arrayItemPrefix);
+        Object.assign(flattenedData, flattenedItem);
+      });
+    } else {
+      // Regular key-value pairs
+      flattenedData[prefix + key] = data[key];
+    }
+  }
+
+  return flattenedData;
 }
 
 function normalizeUrl(urlString) {
@@ -240,40 +344,14 @@ function normalizeUrl(urlString) {
   return (propertiesArray);
 }
 
-function flattenDataLayer(data, prefix = '') {
-  const flattenedData = {};
-
-  for (const key in data) {
-    if (typeof data[key] === 'object' && !Array.isArray(data[key])) {
-      // Recursive call for nested objects
-      const nestedData = flattenDataLayer(data[key], prefix + (key > 0 ? (key - 1) : key) + '_');
-      // const nestedData = flattenDataLayer(data[key], prefix + key + '_');
-      Object.assign(flattenedData, nestedData);
-    } else if (Array.isArray(data[key])) {
-      // Special handling for arrays
-      data[key].forEach((item, index) => {
-        const arrayPrefix = prefix + key + '_';
-        const arrayItemPrefix = arrayPrefix + (index + 1) + '_';
-        const flattenedItem = flattenDataLayer(item, arrayItemPrefix);
-        Object.assign(flattenedData, flattenedItem);
-      });
-    } else {
-      // Regular key-value pairs
-      flattenedData[prefix + key] = data[key];
-    }
-  }
-
-  return flattenedData;
-}
-
-function renameKeys(data, keyMap) {
+function renameKeys(data) {
   const renamedData = {};
 
   for (const key in data) {
     let newKey = key;
 
     for (const oldKey in keyMap) {
-      const regex = new RegExp(oldKey + '$');
+      const regex = new RegExp(oldKey);
       if (key.match(regex)) {
         newKey = key.replace(regex, keyMap[oldKey]);
         break; // Stop searching after finding the first match
@@ -289,13 +367,17 @@ function renameKeys(data, keyMap) {
 function extractKeys(array) {
   // extract all keys from array of events and return sorted array of keys
   var keys = [];
+
   array.forEach((line) => {
-    var parameterNames = [];
-    line.forEach((pair) => {
-      parameterNames.push(pair["key"]);
-    })
-    parameterNames.forEach(name => { keys.push(name); });
+    if (Array.isArray(line)) {
+      line.forEach((pair) => {
+        keys.push(pair["key"]);
+      });
+    } else if (typeof line === 'object') {
+      keys.push(...Object.keys(line));
+    }
   });
+
   keys = keys.filter((value, index) => keys.indexOf(value) === index);
   return keys.sort();
 }
@@ -303,18 +385,29 @@ function extractKeys(array) {
 function createCsv(allColumnNames, allEvents) {
   // create csv string from array of events and array of keys and return csv string
   var csv = '"' + allColumnNames.join('","') + '"\n'; // CSV header
-  for (i = 0; i < allEvents.length; i++) {
-    let row = [];
-    for (j = 0; j < allColumnNames.length; j++) {
-      let columnName = allColumnNames[j];
-      if (allEvents[i].filter((pair) => pair.key == columnName) && allEvents[i].filter((pair) => pair.key == columnName)[0] && allEvents[i].filter((pair) => pair.key == columnName)[0].values) {
-        let value = allEvents[i].filter((pair) => pair.key == columnName)[0].values;
-        row.push(value);
-      } else {
-        row.push('""');
+  for (let i = 0; i < allEvents.length; i++) {
+    if (typeof (allEvents[i][0]) === "object") {
+      let row = [];
+      for (let j = 0; j < allColumnNames.length; j++) {
+        let matchingColumn = allEvents[i].filter((pair) => { if (pair.key === allColumnNames[j]) { return pair.values } });
+        if (matchingColumn[0]) {
+          row.push(matchingColumn[0].values);
+        } else {
+          row.push('""');
+        }
       }
+      csv += '"' + row.join('","') + '"\n';
+    } else {
+      let row = [];
+      for (let j = 0; j < allColumnNames.length; j++) {
+        if (allEvents[i][allColumnNames[j]] && allEvents[i][allColumnNames[j]] !== '') {
+          row.push(allEvents[i][allColumnNames[j]]);
+        } else {
+          row.push('""');
+        }
+      }
+      csv += '"' + row.join('","') + '"\n';
     }
-    csv += '"' + row.join('","') + '"\n';
   }
   return csv;
 }
@@ -323,7 +416,7 @@ function createCsv(allColumnNames, allEvents) {
 
 function getActiveTab() {
   // get active tab object and return it
-  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+  chrome.tabs.query({ active: true, url: "https://*/*" }, function (tabs) {
     return tabs[0];
   });
 }
