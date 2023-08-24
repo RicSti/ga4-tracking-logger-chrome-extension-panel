@@ -1,3 +1,42 @@
+// https://stackoverflow.com/questions/13373187/can-i-increase-quota-bytes-per-item-in-chrome
+// https://developer.chrome.com/docs/extensions/reference/storage/
+
+const storage = (() => {
+  let mutex = Promise.resolve();
+  const API = chrome.storage.sync;
+  const mutexExec = (method, data) => {
+    mutex = Promise.resolve(mutex)
+      .then(() => method(data))
+      .then(result => {
+        mutex = null;
+        return result;
+      });
+    return mutex;
+  };
+  const syncGet = data => new Promise(resolve => API.get(data, resolve));
+  const syncSet = data => new Promise(resolve => API.set(data, resolve));
+  return {
+    read: data => mutexExec(syncGet, data),
+    write: data => mutexExec(syncSet, data),
+  };
+})();
+
+async function asyncStorageHandler(requestString) {
+  let {loggedEvents} = await storage.read({ loggedEvents: {} });
+  let tempLoggedEvents = JSON.parse(loggedEvents);
+  tempLoggedEvents.push(requestString);
+  loggedEvents = JSON.stringify(tempLoggedEvents);
+  await storage.write({ loggedEvents })
+  // .then(() => {
+  //   console.log('new event logged: ', requestString);
+  // });
+}
+
+function updateLoggedEvents(requestString) {
+  // store request in session storage
+  asyncStorageHandler(JSON.stringify(requestString));
+}
+
 // Set up a listener to handle incoming connections
 chrome.runtime.onConnect.addListener(function (port) {
   // Store the incoming port as a local variable
@@ -10,49 +49,21 @@ chrome.runtime.onConnect.addListener(function (port) {
     // });
   } else if (thisPort.name == "datalayer-event") {
     thisPort.onMessage.addListener(function (message) {
-      updateLoggedDataLayerEvents(message.text);
+      // console.log("dataLayer-event received:");
+      // console.log(message.text);
+      updateLoggedEvents(message.text);
     })
   } else if (thisPort.name == "gtag-event") {
     thisPort.onMessage.addListener(function (message) {
-      updateLoggedGtagEvents(message.text);
+      // console.log("gtag-event received:");
+      // console.log(message.text);
+      updateLoggedEvents(message.text);
+    })
+  } else if (thisPort.name == "web-event") {
+    thisPort.onMessage.addListener(function (message) {
+      // console.log("web-event received:");
+      // console.log(message.text);
+      updateLoggedEvents(message.text);
     })
   }
 });
-
-function updateLoggedDataLayerEvents(requestString) {
-  // store request in session storage
-  chrome.storage.session.get(['loggedDataLayerEvents'], function (result) {
-    if (result && result.loggedDataLayerEvents && result.loggedDataLayerEvents !== "[]") {
-      // append request to already stored requests
-      let loggedDataLayerEvents = JSON.parse(result.loggedDataLayerEvents);
-      loggedDataLayerEvents.push(requestString);
-      loggedDataLayerEvents = JSON.stringify(loggedDataLayerEvents);
-      chrome.storage.session.set({ loggedDataLayerEvents: loggedDataLayerEvents });
-    } else {
-      // store new request in session storage
-      let loggedDataLayerEvents = [];
-      loggedDataLayerEvents.push(requestString);
-      loggedDataLayerEvents = JSON.stringify(loggedDataLayerEvents);
-      chrome.storage.session.set({ loggedDataLayerEvents: loggedDataLayerEvents });
-    }
-  });
-}
-
-function updateLoggedGtagEvents(requestString) {
-  // store request in session storage
-  chrome.storage.session.get(['loggedGtagEvents'], function (result) {
-    if (result && result.loggedGtagEvents && result.loggedGtagEvents !== "[]") {
-      // append request to already stored requests
-      let loggedGtagEvents = JSON.parse(result.loggedGtagEvents);
-      loggedGtagEvents.push(requestString);
-      loggedGtagEvents = JSON.stringify(loggedGtagEvents);
-      chrome.storage.session.set({ loggedGtagEvents: loggedGtagEvents });
-    } else {
-      // store new request in session storage
-      let loggedGtagEvents = [];
-      loggedGtagEvents.push(requestString);
-      loggedGtagEvents = JSON.stringify(loggedGtagEvents);
-      chrome.storage.session.set({ loggedGtagEvents: loggedGtagEvents });
-    }
-  });
-}

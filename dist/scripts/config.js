@@ -46,4 +46,4 @@ const keyMap = {
     // For example: 'item_id$': 'piid' (matches keys ending with 'item_id')
 };
 
-const columnNamesBlacklist = ["_ee","_et","_eu","_gaz","_gid","_ono","_p","_r","_slc","_u","_v","a","adf","aip","aps","cd","ce","cf","cid","cos","cp","cu","dl","dr","dt","gjid","gtm","gtm.elementClasses","gtm.elementId","gtm.elementTarget","gtm.elementUrl","gtm.element_jQuery370067025086784166032_settings_background_background","gtm.scrollDirection","gtm.scrollThreshold","gtm.scrollUnits","gtm.triggers","ilcv","ir","je","jid","jsscut","ni","sct","sd","seg","sid","sr","uaa","uab","uafvl","uam","uamb","uap","uapv","uaw","ul","v","vp","z"];
+const columnNamesBlacklist = ["_ee","_et","_eu","_gaz","_gid","_ono","_p","_r","_slc","_u","_v","a","adf","aip","aps","cd","ce","cf","cid","cos","cp","cu","gjid","gtm","gtm.elementClasses","gtm.elementId","gtm.elementTarget","gtm.elementUrl","gtm.element_jQuery370067025086784166032_settings_background_background","gtm.scrollDirection","gtm.scrollThreshold","gtm.scrollUnits","gtm.triggers","ilcv","ir","je","jid","jsscut","ni","sct","sd","seg","sid","sr","uaa","uab","uafvl","uam","uamb","uap","uapv","uaw","ul","v","vp","z"];
