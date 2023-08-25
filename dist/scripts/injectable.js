@@ -1,6 +1,9 @@
+// This file is injected into the page by the extension
+
 let dataLayerCache = [];
 
 function postDataLayerEvent(event) {
+    // send DataLayer event to background script
     event["dateTime"] = new Date().toISOString();
     event["dl"] = window.location.origin + window.location.pathname;
     event["type"] = "dataLayer";
@@ -9,8 +12,10 @@ function postDataLayerEvent(event) {
 }
 
 function postGtagEvent(arguments) {
+    // send gtag event to background script
 
     function flattenObject(obj, prefix = "") {
+        // flatten object to key-value pairs
         var result = {};
 
         for (var key in obj) {
@@ -32,7 +37,7 @@ function postGtagEvent(arguments) {
     postMessage(JSON.stringify(flattenedArgs));
 }
 
-// Define your event listener function
+// event listener function for dataLayer events
 function handleDataLayerEvent(event) {
     postDataLayerEvent(event);
 }
@@ -80,6 +85,9 @@ function activateListener() {
 }
 
 function activateGtagListener() {
+    // Add the event listener to the gtag function
+
+    // Store the original gtag function
     const originalGtag = window.gtag;
 
     // Override the gtag function
@@ -93,13 +101,16 @@ function activateGtagListener() {
 }
 
 function slowdownMouse() {
+    // slow down the clicks by 250ms
+
+    // Add a click event listener to the document
     document.addEventListener('click', function (event) {
         // Check if the click was triggered by a mouse event
         if (event.type === 'click' && event.clientX !== 0 && event.clientY !== 0) {
             // Prevent the default click behavior
             event.preventDefault();
 
-            // Introduce a delay of 500ms before proceeding
+            // Introduce a delay of 250ms before proceeding
             setTimeout(function () {
                 // Perform the original click action after the delay
                 event.target.click();
